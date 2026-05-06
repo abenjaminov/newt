@@ -1,0 +1,9 @@
+pub mod file_index;
+pub mod fs_ops;
+pub mod git_ops;
+pub mod logo;
+pub mod processes;
+pub mod pty;
+pub mod shells;
+pub mod watcher;
+pub mod worktree;

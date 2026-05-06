@@ -1,0 +1,107 @@
+:root {
+  /* Newt palette — warm orange-amber accent on deep mossy-charcoal. */
+  --bg: #0e1311;
+  --bg-2: #151c18;
+  --bg-3: #1c2520;
+  --bg-hover: #25302a;
+  --border: #2a3530;
+  --fg: #e7e5dd;
+  --fg-dim: #9ca59b;
+  --fg-faint: #6a7570;
+  --accent: #e8915a; /* newt belly */
+  --accent-2: #c97a3f; /* deeper rust */
+  --green: #8fb877;
+  --yellow: #d4b86a;
+  --red: #e06b5c;
+
+  --activity-bar-w: 44px;
+  --side-panel-w: 260px;
+  --terminal-h: 220px;
+  --top-bar-h: 32px;
+
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, monospace;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, sans-serif;
+  --editor-font-size: 13px;
+  --ui-font-size: 13px;
+  --terminal-font-family: "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+  --terminal-font-size: 13px;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: var(--ui-font-size);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+  width: 100%;
+}
+
+button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  font-family: inherit;
+  background: var(--bg-3);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* CodeMirror, xterm, markdown preview also need their text selectable. */
+.cm-editor,
+.cm-content,
+.xterm-screen,
+.md-content {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-3);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-hover);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

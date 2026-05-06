@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      promote:
+        description: 'Promote this build to a stable Release (otherwise pre-release).'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo (${{ matrix.target }})
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: ${{ matrix.target }}
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      # On every push to main: upload artifacts to a pre-release tagged `main-<run>`.
+      # On a v*.*.* tag push: create the matching public Release.
+      - name: Build & release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.target }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('main-{0}', github.run_number) }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Newt {0}', github.ref_name) || format('Newt main build #{0}', github.run_number) }}
+          releaseBody: |
+            Automated build.
+            - Commit: ${{ github.sha }}
+            - Branch: ${{ github.ref_name }}
+
+            macOS notes: this build is unsigned. First launch needs right-click → Open, or:
+            `xattr -d com.apple.quarantine /Applications/Newt.app`
+          releaseDraft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') && github.event.inputs.promote != 'true' }}
+          includeUpdaterJson: false

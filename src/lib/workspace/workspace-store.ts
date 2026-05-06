@@ -7,5 +7,5 @@ export type Workspace = {
 
 export const workspace = writable<Workspace | null>(null);
 
-export type SidePanel = "files" | "git" | "processes";
+export type SidePanel = "files" | "search" | "git" | "processes";
 export const activePanel = writable<SidePanel>("files");

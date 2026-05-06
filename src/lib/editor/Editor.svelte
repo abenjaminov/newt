@@ -4,7 +4,7 @@
   import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from "@codemirror/view";
   import { settings } from "../settings/settings-store";
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-  import { searchKeymap, search } from "@codemirror/search";
+  import { searchKeymap, search, openSearchPanel } from "@codemirror/search";
   import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
   import {
     bracketMatching,
@@ -18,6 +18,7 @@
   import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
   import { editorTheme } from "./theme";
   import { loaderForFilename } from "./languages";
+  import { pendingGoto } from "./goto";
 
   type Props = {
     path: string;
@@ -68,6 +69,25 @@
           preventDefault: true,
           run: () => {
             onSave();
+            return true;
+          },
+        },
+        {
+          key: "Mod-h",
+          preventDefault: true,
+          run: (v) => {
+            // Open the panel in replace mode by toggling the replace field.
+            openSearchPanel(v);
+            queueMicrotask(() => {
+              const root = v.dom;
+              const replaceInput = root.querySelector<HTMLInputElement>(
+                ".cm-panel.cm-search input[name=replace]",
+              );
+              if (replaceInput) {
+                replaceInput.focus();
+                replaceInput.select();
+              }
+            });
             return true;
           },
         },
@@ -139,6 +159,32 @@
   function filenameOf(p: string) {
     return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
   }
+
+  function applyGoto(line: number, colStart?: number, colEnd?: number) {
+    if (!view) return;
+    const doc = view.state.doc;
+    const lineNum = Math.max(1, Math.min(doc.lines, line));
+    const ln = doc.line(lineNum);
+    const from = ln.from + Math.max(0, Math.min(ln.length, colStart ?? 0));
+    const to = ln.from + Math.max(0, Math.min(ln.length, colEnd ?? colStart ?? 0));
+    view.dispatch({
+      selection: { anchor: from, head: to },
+      effects: EditorView.scrollIntoView(from, { y: "center" }),
+    });
+    view.focus();
+  }
+
+  // Subscribe to global goto requests for this open file. Fires when the user
+  // clicks a search hit or other navigate-to-line action.
+  let lastGotoNonce = 0;
+  $effect(() => {
+    const g = $pendingGoto;
+    if (!g || g.path !== path) return;
+    if (g.nonce === lastGotoNonce) return;
+    lastGotoNonce = g.nonce;
+    // Defer one tick so it runs after the doc/lang reset on path change.
+    queueMicrotask(() => applyGoto(g.line, g.colStart, g.colEnd));
+  });
 
   // Reset doc + language when a different file is opened. Skips the dispatch
   // when the doc already matches initialContent (the common first-mount case),

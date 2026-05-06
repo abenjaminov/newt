@@ -26,7 +26,22 @@
     }
   });
 
+  function preferredWslDistro(rootPath: string | undefined): string | null {
+    if (!rootPath) return null;
+    const m = rootPath.match(/^\\\\wsl(?:\$|\.localhost)\\([^\\]+)/i);
+    return m ? m[1] : null;
+  }
+
   function defaultShell(): ShellInfo | undefined {
+    const distro = preferredWslDistro($workspace?.rootPath);
+    if (distro) {
+      const wsl = shells.find(
+        (s) => s.kind === "wsl" && s.id.toLowerCase() === `wsl:${distro.toLowerCase()}`,
+      );
+      if (wsl) return wsl;
+      const anyWsl = shells.find((s) => s.kind === "wsl");
+      if (anyWsl) return anyWsl;
+    }
     return shells.find((s) => s.default) ?? shells[0];
   }
 

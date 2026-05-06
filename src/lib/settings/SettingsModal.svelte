@@ -241,6 +241,42 @@
           />
         </div>
       {/if}
+
+      <div class="field">
+        <label class="checkbox">
+          <input
+            type="checkbox"
+            checked={$settings.formatOnSave}
+            onchange={(e) => set("formatOnSave", e.currentTarget.checked)}
+          />
+          Format on save (uses commands below)
+        </label>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Formatters (one per extension; <code>{'{file}'}</code> is the path)</span>
+        <textarea
+          rows="4"
+          spellcheck="false"
+          placeholder={"ts: prettier --write {file}\nrs: rustfmt {file}\npy: black {file}"}
+          value={Object.entries($settings.formatters)
+            .map(([ext, cmd]) => `${ext}: ${cmd}`)
+            .join("\n")}
+          onchange={(e) => {
+            const out: Record<string, string> = {};
+            for (const line of e.currentTarget.value.split(/\r?\n/)) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              const colon = trimmed.indexOf(":");
+              if (colon <= 0) continue;
+              const ext = trimmed.slice(0, colon).trim().toLowerCase().replace(/^\./, "");
+              const cmd = trimmed.slice(colon + 1).trim();
+              if (ext && cmd) out[ext] = cmd;
+            }
+            set("formatters", out);
+          }}
+        ></textarea>
+      </div>
     </section>
 
     <section>
@@ -398,6 +434,7 @@
   }
   .field input[type="text"],
   .field input[type="number"],
+  .field textarea,
   .field select {
     background: var(--bg-3);
     border: 1px solid var(--border);
@@ -407,6 +444,10 @@
     font-size: 12px;
     font-family: var(--font-mono);
   }
+  .field textarea {
+    resize: vertical;
+    line-height: 1.5;
+  }
   .field input[type="number"] {
     width: 90px;
     font-family: var(--font-ui);
@@ -415,6 +456,7 @@
     font-family: var(--font-ui);
   }
   .field input:focus,
+  .field textarea:focus,
   .field select:focus {
     outline: none;
     border-color: var(--accent);

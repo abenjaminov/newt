@@ -12,6 +12,7 @@
 
   const items: { id: SidePanel; label: string; icon: string }[] = [
     { id: "files", label: "Files", icon: "📁" },
+    { id: "search", label: "Search", icon: "🔍" },
     { id: "git", label: "Git", icon: "⎇" },
     { id: "processes", label: "Processes", icon: "▤" },
   ];

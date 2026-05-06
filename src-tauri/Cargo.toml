@@ -24,6 +24,12 @@ portable-pty = "0.8"
 parking_lot = "0.12"
 sysinfo = "0.32"
 base64 = "0.22"
+ignore = "0.4"
+grep-matcher = "0.1"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+regex = "1"
+tokio = { version = "1", features = ["process", "io-util", "sync", "rt-multi-thread", "macros", "time"] }
 
 [profile.release]
 panic = "abort"

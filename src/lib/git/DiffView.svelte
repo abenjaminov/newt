@@ -47,13 +47,10 @@
     oversize = null;
     try {
       const absPath = `${repo}${repo.includes("/") ? "/" : "\\"}${path.replace(/\//g, repo.includes("/") ? "/" : "\\")}`;
-      let workingContent = "";
-      try {
-        workingContent = await invoke<string>("read_file", { path: absPath });
-      } catch {
-        workingContent = "";
-      }
-      const headContent = isUntracked ? "" : await fileAtHead(repo, path);
+      const [workingContent, headContent] = await Promise.all([
+        invoke<string>("read_file", { path: absPath }).catch(() => ""),
+        isUntracked ? Promise.resolve("") : fileAtHead(repo, path),
+      ]);
 
       const workingBytes = new Blob([workingContent]).size;
       const headBytes = new Blob([headContent]).size;

@@ -29,6 +29,7 @@
   let search: SearchAddon | undefined;
   let pty: PtyHandle | undefined;
   let resizeObserver: ResizeObserver | undefined;
+  let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 
   onMount(async () => {
     const s = get(settings);
@@ -64,10 +65,18 @@
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => webgl.dispose());
       term.loadAddon(webgl);
-    } catch {
-      // canvas/dom fallback
+    } catch (e) {
+      console.warn("xterm WebGL renderer unavailable, using canvas/DOM fallback:", e);
     }
 
+    // Wait for layout so fit() sees the real container height. Without this,
+    // host.clientHeight can be 0 at onMount, fit() falls back to xterm's 80x24
+    // default, and the shell paints a 24-row banner — leaving an empty band
+    // above the prompt once the resize observer trims rows down.
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    if (host.clientHeight < 4 || host.clientWidth < 4) {
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    }
     fit.fit();
     const { cols, rows } = term;
 
@@ -91,8 +100,14 @@
       pty?.write(data).catch(() => {});
     });
 
+    // Debounce SIGWINCH: every dragged row would otherwise call pty.resize,
+    // each one nudging bash/readline to redraw the prompt. The result is
+    // stacked prompts in the buffer during a drag.
     term.onResize(({ cols, rows }) => {
-      pty?.resize(cols, rows).catch(() => {});
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        pty?.resize(cols, rows).catch(() => {});
+      }, 120);
     });
 
     // Watch for container size changes.
@@ -149,6 +164,7 @@
 
   onDestroy(() => {
     resizeObserver?.disconnect();
+    if (resizeTimer) clearTimeout(resizeTimer);
     pty?.kill().catch(() => {});
     term?.dispose();
   });

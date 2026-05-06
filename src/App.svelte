@@ -15,6 +15,7 @@
   import Splitter from "./lib/common/Splitter.svelte";
   import TerminalPanel from "./lib/terminal/TerminalPanel.svelte";
   import GitPanel from "./lib/git/GitPanel.svelte";
+  import SearchPanel from "./lib/search/SearchPanel.svelte";
   import DiffView from "./lib/git/DiffView.svelte";
   import { refreshIgnored } from "./lib/git/git-store";
   import ProcessesPanel from "./lib/processes/ProcessesPanel.svelte";
@@ -26,6 +27,7 @@
   import NamePrompt from "./lib/common/NamePrompt.svelte";
   import { loadSettings, settings, updateSettings } from "./lib/settings/settings-store";
   import CommandPalette from "./lib/palette/CommandPalette.svelte";
+  import OutlinePalette from "./lib/palette/OutlinePalette.svelte";
   import {
     commandRegistry,
     paletteOpen,
@@ -50,7 +52,8 @@
     type Worktree,
   } from "./lib/worktree/worktree-store";
   import { isMarkdown } from "./lib/editor/languages";
-  import { tabs, activeTab } from "./lib/editor/tabs-store";
+  import { tabs, activeTab, popRecentlyClosed } from "./lib/editor/tabs-store";
+  import { openFileAtPath } from "./lib/editor/open-file";
   import { workspace, activePanel } from "./lib/workspace/workspace-store";
 
   let saveError = $state<string | null>(null);
@@ -65,22 +68,53 @@
   let editorScrollPct = $state(0);
   let terminalH = $state(220);
   let sidePanelW = $state(260);
+  let shellEl = $state<HTMLDivElement | undefined>(undefined);
+  let searchPanelEl = $state<SearchPanel | undefined>(undefined);
+  let showOutline = $state(false);
+
+  function openSearchPanel() {
+    activePanel.set("search");
+    sidePanelCollapsed = false;
+    queueMicrotask(() => searchPanelEl?.focusInput());
+  }
 
   function startTerminalResize(e: PointerEvent) {
     if (e.button !== 0) return;
     e.preventDefault();
+    const shellRect = shellEl?.getBoundingClientRect();
+    const shellBottom = shellRect ? shellRect.bottom : window.innerHeight;
+    const shellTop = shellRect ? shellRect.top : 0;
+    const STATUS_BAR_H = 24;
+    const startY = e.clientY;
+    // Offset between cursor and visible boundary at click time (≤3px in
+    // either direction inside the 6px hitbox). We preserve this offset for
+    // the first move (no click-jump), then linearly decay it to 0 over the
+    // first 24px of movement so subsequent dragging tracks 1:1.
+    const startBoundaryY = shellBottom - terminalH - STATUS_BAR_H;
+    const initialOffset = e.clientY - startBoundaryY;
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
     const move = (ev: PointerEvent) => {
-      const proposed = window.innerHeight - ev.clientY;
-      terminalH = Math.max(60, Math.min(window.innerHeight * 0.85, proposed));
+      const moveDist = Math.abs(ev.clientY - startY);
+      const offsetWeight = Math.max(0, 1 - moveDist / 24);
+      const currentOffset = initialOffset * offsetWeight;
+      const proposed = shellBottom - (ev.clientY - currentOffset) - STATUS_BAR_H;
+      const maxH = (shellBottom - shellTop) * 0.85;
+      terminalH = Math.max(60, Math.min(maxH, proposed));
     };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+    const up = (ev: PointerEvent) => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      try {
+        target.releasePointerCapture(ev.pointerId);
+      } catch {
+        // ignored
+      }
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
     document.body.style.cursor = "row-resize";
     document.body.style.userSelect = "none";
   }
@@ -92,18 +126,31 @@
       parseFloat(
         getComputedStyle(document.documentElement).getPropertyValue("--activity-bar-w"),
       ) || 44;
+    const startX = e.clientX;
+    const startBoundaryX = activityW + sidePanelW;
+    const initialOffset = e.clientX - startBoundaryX;
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
     const move = (ev: PointerEvent) => {
-      const proposed = ev.clientX - activityW;
+      const moveDist = Math.abs(ev.clientX - startX);
+      const offsetWeight = Math.max(0, 1 - moveDist / 24);
+      const currentOffset = initialOffset * offsetWeight;
+      const proposed = ev.clientX - currentOffset - activityW;
       sidePanelW = Math.max(160, Math.min(window.innerWidth * 0.6, proposed));
     };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+    const up = (ev: PointerEvent) => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      try {
+        target.releasePointerCapture(ev.pointerId);
+      } catch {
+        // ignored
+      }
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   }
@@ -163,7 +210,11 @@
       if (pNode && pNode.is_dir && !pNode.loaded) {
         const entries = await invoke<
           { name: string; path: string; is_dir: boolean }[]
-        >("read_dir", { path: parentPath });
+        >("read_dir", {
+          path: parentPath,
+          showHidden: $settings.fileTreeShowHidden,
+          respectGitignore: !$settings.fileTreeShowHidden,
+        });
         pNode.children = entries.map((e) => ({
           ...e,
           expanded: false,
@@ -287,6 +338,9 @@
     } else {
       sidePanelCollapsed = false;
       activePanel.set(target);
+      if (target === "search") {
+        queueMicrotask(() => searchPanelEl?.focusInput());
+      }
     }
   }
 
@@ -378,6 +432,20 @@
         },
       },
       {
+        id: "view.search",
+        title: "Search in Files",
+        group: "View",
+        hint: "Ctrl+Shift+F",
+        run: openSearchPanel,
+      },
+      {
+        id: "view.outline",
+        title: "Go to Symbol in File…",
+        group: "View",
+        hint: "Ctrl+Shift+O",
+        run: () => (showOutline = true),
+      },
+      {
         id: "view.git",
         title: "Show Git Changes",
         group: "View",
@@ -409,6 +477,16 @@
       },
     );
 
+    cmds.push({
+      id: "file.reopenClosed",
+      title: "Reopen Closed Tab",
+      group: "File",
+      hint: "Ctrl+Shift+T",
+      run: async () => {
+        const p = popRecentlyClosed();
+        if (p) await openFileAtPath(p);
+      },
+    });
     if ($activeTab) {
       cmds.push(
         {
@@ -646,6 +724,39 @@
 
   onDestroy(() => unlistenFs?.());
 
+  function extOf(path: string): string {
+    const base = path.split(/[\\/]/).pop() ?? "";
+    const dot = base.lastIndexOf(".");
+    return dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
+  }
+
+  async function maybeFormat(path: string): Promise<boolean> {
+    if (!$settings.formatOnSave) return false;
+    const ext = extOf(path);
+    const command = $settings.formatters[ext];
+    if (!command || !command.trim()) return false;
+    try {
+      const res = await invoke<{ ok: boolean }>("run_formatter", { command, file: path });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function reloadFromDisk(path: string) {
+    const t = get(tabs).tabs.find((tt) => tt.path === path);
+    if (!t || t.kind !== "text") return;
+    try {
+      const next = await invoke<string>("read_file", { path });
+      if (next !== t.content) {
+        tabs.edit(path, next);
+      }
+      tabs.markSaved(path);
+    } catch {
+      // ignored
+    }
+  }
+
   async function saveActive() {
     const t = $activeTab;
     if (!t || !t.dirty) return;
@@ -653,6 +764,9 @@
       await invoke("write_file", { path: t.path, content: t.content });
       tabs.markSaved(t.path);
       saveError = null;
+      if (await maybeFormat(t.path)) {
+        await reloadFromDisk(t.path);
+      }
     } catch (e) {
       saveError = String(e);
     }
@@ -664,6 +778,9 @@
     try {
       await invoke("write_file", { path, content: t.content });
       tabs.markSaved(path);
+      if (await maybeFormat(path)) {
+        await reloadFromDisk(path);
+      }
     } catch {
       // ignored — manual save will surface error
     }
@@ -720,6 +837,7 @@
 {:else}
   <div
     class="shell"
+    bind:this={shellEl}
     style:--side-col-w="{sidePanelCollapsed ? '0px' : sidePanelW + 'px'}"
     style:--bottom-row-h="{terminalCollapsed ? '28px' : terminalH + 'px'}"
   >
@@ -769,6 +887,19 @@
               >
                 <span class="hb-glyph">+📁</span>
               </button>
+              <button
+                class="header-btn"
+                class:on={$settings.fileTreeShowHidden}
+                title={$settings.fileTreeShowHidden
+                  ? "Hide ignored files (.gitignore)"
+                  : "Show ignored files"}
+                onclick={() =>
+                  updateSettings({
+                    fileTreeShowHidden: !$settings.fileTreeShowHidden,
+                  })}
+              >
+                <span class="hb-glyph">{$settings.fileTreeShowHidden ? "👁" : "⦰"}</span>
+              </button>
             {/if}
             <button
               class="collapse-btn"
@@ -780,22 +911,28 @@
           </div>
         </div>
         <div class="panel-body">
-          {#if $activePanel === "files"}
+          <div class="panel-slot" class:active={$activePanel === "files"}>
             <FileTree />
-          {:else if $activePanel === "git"}
+          </div>
+          <div class="panel-slot" class:active={$activePanel === "search"}>
+            <SearchPanel bind:this={searchPanelEl} />
+          </div>
+          <div class="panel-slot" class:active={$activePanel === "git"}>
             <GitPanel />
-          {:else}
+          </div>
+          <div class="panel-slot" class:active={$activePanel === "processes"}>
             <ProcessesPanel visible={$activePanel === "processes" && !sidePanelCollapsed} />
-          {/if}
+          </div>
         </div>
-        <div
+        <!-- side-panel resize handle disabled while we sort out drag UX -->
+        <!-- <div
           class="side-resize"
           onpointerdown={startSidePanelResize}
           ondblclick={resetSidePanelSize}
           role="separator"
           aria-orientation="vertical"
           title="Drag to resize · double-click to reset"
-        ></div>
+        ></div> -->
       </aside>
 
       <main class="editor-area">
@@ -896,7 +1033,8 @@
     </div>
 
     <footer class="terminal-area" class:collapsed={terminalCollapsed}>
-      {#if !terminalCollapsed}
+      <!-- terminal resize handle disabled while we sort out drag UX -->
+      <!-- {#if !terminalCollapsed}
         <div
           class="terminal-resize"
           onpointerdown={startTerminalResize}
@@ -905,7 +1043,7 @@
           aria-orientation="horizontal"
           title="Drag to resize · double-click to reset"
         ></div>
-      {/if}
+      {/if} -->
       <TerminalPanel
         collapsed={terminalCollapsed}
         onToggleCollapse={() => (terminalCollapsed = !terminalCollapsed)}
@@ -931,6 +1069,10 @@
 
     {#if $paletteOpen}
       <CommandPalette />
+    {/if}
+
+    {#if showOutline}
+      <OutlinePalette onClose={() => (showOutline = false)} />
     {/if}
 
     {#if namePrompt}
@@ -1075,6 +1217,9 @@
     background: var(--bg-hover);
     color: var(--fg);
   }
+  .header-btn.on {
+    color: var(--accent);
+  }
   .hb-glyph {
     font-size: 11px;
     letter-spacing: -1px;
@@ -1094,9 +1239,18 @@
   .panel-body {
     flex: 1;
     overflow: hidden;
-    display: flex;
+    position: relative;
+    min-height: 0;
+  }
+  .panel-slot {
+    position: absolute;
+    inset: 0;
+    display: none;
     flex-direction: column;
     min-height: 0;
+  }
+  .panel-slot.active {
+    display: flex;
   }
   .editor-area {
     background: var(--bg);

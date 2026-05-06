@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
+use ignore::WalkBuilder;
 use serde::Serialize;
 use std::path::Path;
 
@@ -10,23 +11,71 @@ pub struct DirEntry {
 }
 
 #[tauri::command]
-pub fn read_dir(path: String) -> Result<Vec<DirEntry>, String> {
+pub fn read_dir(
+    path: String,
+    show_hidden: Option<bool>,
+    respect_gitignore: Option<bool>,
+) -> Result<Vec<DirEntry>, String> {
     let p = Path::new(&path);
-    let read = std::fs::read_dir(p).map_err(|e| format!("read_dir({}): {}", path, e))?;
+    if !p.is_dir() {
+        return Err(format!("read_dir({}): not a directory", path));
+    }
+    let hidden = show_hidden.unwrap_or(false);
+    let gitignore = respect_gitignore.unwrap_or(true);
+
     let mut entries: Vec<DirEntry> = Vec::new();
-    for entry in read {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let file_type = match entry.file_type() {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        let is_dir = file_type.is_dir();
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let path = entry.path().to_string_lossy().into_owned();
-        entries.push(DirEntry { name, path, is_dir });
+
+    if !gitignore && hidden {
+        let read =
+            std::fs::read_dir(p).map_err(|e| format!("read_dir({}): {}", path, e))?;
+        for entry in read {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let file_type = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name == ".git" {
+                continue;
+            }
+            let is_dir = file_type.is_dir();
+            let path = entry.path().to_string_lossy().into_owned();
+            entries.push(DirEntry { name, path, is_dir });
+        }
+    } else {
+        let mut walker = WalkBuilder::new(p);
+        walker
+            .max_depth(Some(1))
+            .hidden(!hidden)
+            .git_ignore(gitignore)
+            .git_global(gitignore)
+            .git_exclude(gitignore)
+            .ignore(gitignore)
+            .parents(gitignore)
+            .filter_entry(|e| e.file_name() != ".git");
+        for entry in walker.build() {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            if entry.depth() == 0 {
+                continue; // skip the root itself
+            }
+            let ft = match entry.file_type() {
+                Some(t) => t,
+                None => continue,
+            };
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let abs = entry.path().to_string_lossy().into_owned();
+            entries.push(DirEntry {
+                name,
+                path: abs,
+                is_dir: ft.is_dir(),
+            });
+        }
     }
     entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
         (true, false) => std::cmp::Ordering::Less,

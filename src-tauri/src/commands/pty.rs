@@ -4,7 +4,9 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::mpsc;
 use std::sync::OnceLock;
+use std::time::Duration;
 use tauri::ipc::Channel;
 
 struct Pty {
@@ -66,24 +68,52 @@ pub fn spawn_pty(
 
     let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
 
-    // Reader thread: pump pty bytes into the channel as UTF-8 strings.
-    // Terminal output is overwhelmingly ASCII (text + ANSI escapes); the
-    // occasional multi-byte UTF-8 char split across a chunk boundary becomes
-    // a replacement character via lossy decoding. A stateful decoder could
-    // handle this exactly but is overkill for current usage.
-    let on_data_thread = on_data.clone();
+    // Reader thread: blocking reads from the pty into a local mpsc.
+    // Coalescer thread: drains the mpsc with a short idle window and sends
+    // one batched String per flush. PTY writes from interactive shells often
+    // arrive byte-by-byte (cursor moves, ANSI sequences); shipping each one
+    // through the IPC channel separately is a major source of input lag.
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let s = String::from_utf8_lossy(&buf[..n]);
-                    if on_data_thread.send(s.into_owned()).is_err() {
+                    if tx.send(buf[..n].to_vec()).is_err() {
                         break;
                     }
                 }
                 Err(_) => break,
+            }
+        }
+    });
+
+    let on_data_thread = on_data.clone();
+    std::thread::spawn(move || {
+        const FLUSH_WINDOW: Duration = Duration::from_millis(4);
+        const MAX_BATCH: usize = 64 * 1024;
+        loop {
+            // Block until we have something to send.
+            let first = match rx.recv() {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            let mut acc = first;
+            // Drain more chunks for up to FLUSH_WINDOW or until size cap.
+            while acc.len() < MAX_BATCH {
+                match rx.recv_timeout(FLUSH_WINDOW) {
+                    Ok(v) => acc.extend_from_slice(&v),
+                    Err(_) => break,
+                }
+            }
+            // Lossy decode: terminal output is overwhelmingly ASCII (text +
+            // ANSI escapes); a multi-byte UTF-8 char split across a flush
+            // boundary becomes a replacement char. A stateful decoder could
+            // handle this exactly but is overkill for current usage.
+            let s = String::from_utf8_lossy(&acc).into_owned();
+            if on_data_thread.send(s).is_err() {
+                break;
             }
         }
     });

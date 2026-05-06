@@ -1,3 +1,4 @@
+use ignore::WalkBuilder;
 use serde::Serialize;
 use std::path::Path;
 
@@ -8,31 +9,12 @@ pub struct FileEntry {
     pub name: String,
 }
 
-const SKIP_DIR: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    "dist",
-    "build",
-    ".next",
-    ".nuxt",
-    ".svelte-kit",
-    ".turbo",
-    ".cache",
-    ".venv",
-    "venv",
-    "__pycache__",
-    ".pytest_cache",
-    ".gradle",
-    ".idea",
-    ".vscode",
-    "vendor",
-];
-
 const DEFAULT_MAX: usize = 8000;
 
-/// Recursively list all files under `root`, skipping common build/vendor
-/// directories. Capped to keep the command palette responsive.
+/// Recursively list all files under `root`, skipping anything matched by
+/// .gitignore / .ignore / global excludes (via the `ignore` crate). The
+/// `.git` directory is always skipped. Capped to keep the command palette
+/// responsive on large repos.
 #[tauri::command]
 pub fn list_files(root: String, max: Option<usize>) -> Result<Vec<FileEntry>, String> {
     let root_path = Path::new(&root);
@@ -41,48 +23,47 @@ pub fn list_files(root: String, max: Option<usize>) -> Result<Vec<FileEntry>, St
     }
     let cap = max.unwrap_or(DEFAULT_MAX);
     let mut out = Vec::with_capacity(512);
-    walk(root_path, root_path, &mut out, cap);
-    Ok(out)
-}
 
-fn walk(root: &Path, dir: &Path, out: &mut Vec<FileEntry>, cap: usize) {
-    if out.len() >= cap {
-        return;
-    }
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries {
+    let mut walker = WalkBuilder::new(root_path);
+    walker
+        .hidden(true)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .ignore(true)
+        .parents(true)
+        .filter_entry(|e| e.file_name() != ".git");
+
+    for entry in walker.build() {
         if out.len() >= cap {
-            return;
+            break;
         }
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,
         };
-        let file_type = match entry.file_type() {
-            Ok(t) => t,
-            Err(_) => continue,
+        let ft = match entry.file_type() {
+            Some(t) => t,
+            None => continue,
         };
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if file_type.is_dir() {
-            if SKIP_DIR.iter().any(|s| s.eq_ignore_ascii_case(&name)) {
-                continue;
-            }
-            walk(root, &entry.path(), out, cap);
-        } else if file_type.is_file() {
-            let path = entry.path();
-            let rel = path
-                .strip_prefix(root)
-                .ok()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.to_string_lossy().into_owned());
-            out.push(FileEntry {
-                path: path.to_string_lossy().into_owned(),
-                rel,
-                name,
-            });
+        if !ft.is_file() {
+            continue;
         }
+        let path = entry.path();
+        let rel = path
+            .strip_prefix(root_path)
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.to_string_lossy().into_owned());
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        out.push(FileEntry {
+            path: path.to_string_lossy().into_owned(),
+            rel,
+            name,
+        });
     }
+    Ok(out)
 }

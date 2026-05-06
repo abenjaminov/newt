@@ -22,6 +22,21 @@ type TabsState = {
   activePath: string | null;
 };
 
+const RECENTLY_CLOSED_MAX = 20;
+const recentlyClosed: string[] = [];
+
+function pushRecentlyClosed(path: string) {
+  if (path.startsWith("diff://")) return; // diff tabs aren't reopenable
+  const idx = recentlyClosed.indexOf(path);
+  if (idx !== -1) recentlyClosed.splice(idx, 1);
+  recentlyClosed.push(path);
+  if (recentlyClosed.length > RECENTLY_CLOSED_MAX) recentlyClosed.shift();
+}
+
+export function popRecentlyClosed(): string | null {
+  return recentlyClosed.pop() ?? null;
+}
+
 function basename(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 }
@@ -108,6 +123,7 @@ function createTabs() {
       update((s) => ({ ...s, activePath: path }));
     },
     close(path: string) {
+      pushRecentlyClosed(path);
       update((s) => {
         const tabs = s.tabs.filter((t) => t.path !== path);
         let activePath = s.activePath;

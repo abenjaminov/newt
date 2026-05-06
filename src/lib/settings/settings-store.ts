@@ -14,6 +14,9 @@ export type Settings = {
   terminalFontFamily: string;
   terminalFontSize: number;
   worktreeForeignTabs: "mark" | "close" | "keepActive";
+  fileTreeShowHidden: boolean;
+  formatOnSave: boolean;
+  formatters: Record<string, string>; // ext (no dot) -> shell command, e.g. "ts": "prettier --write {file}"
 };
 
 export const DEFAULTS: Settings = {
@@ -32,6 +35,9 @@ export const DEFAULTS: Settings = {
     '"JetBrains Mono", "Fira Code", Menlo, Consolas, monospace',
   terminalFontSize: 13,
   worktreeForeignTabs: "mark",
+  fileTreeShowHidden: false,
+  formatOnSave: false,
+  formatters: {},
 };
 
 export const FONT_SUGGESTIONS_MONO = [

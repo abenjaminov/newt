@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import { workspace } from "../workspace/workspace-store";
   import { openFileAtPath } from "../editor/open-file";
+  import { settings, updateSettings } from "../settings/settings-store";
   import { treeStore, type DirEntry, type TreeNode } from "./tree-store.svelte";
   import TreeItem from "./TreeItem.svelte";
 
@@ -15,7 +16,11 @@
     loading = true;
     error = null;
     try {
-      const entries = await invoke<DirEntry[]>("read_dir", { path: ws.rootPath });
+      const entries = await invoke<DirEntry[]>("read_dir", {
+        path: ws.rootPath,
+        showHidden: $settings.fileTreeShowHidden,
+        respectGitignore: !$settings.fileTreeShowHidden,
+      });
       treeStore.root = {
         name: ws.rootName,
         path: ws.rootPath,
@@ -41,6 +46,15 @@
   workspace.subscribe(() => {
     if ($workspace) loadRoot();
     else treeStore.root = null;
+  });
+
+  // Reload when the show-hidden toggle changes.
+  let lastHidden = $state($settings.fileTreeShowHidden);
+  $effect(() => {
+    const cur = $settings.fileTreeShowHidden;
+    if (cur === lastHidden) return;
+    lastHidden = cur;
+    if ($workspace) void loadRoot();
   });
 </script>
 

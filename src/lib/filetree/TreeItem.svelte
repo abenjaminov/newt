@@ -8,6 +8,7 @@
   import { fileIcon, folderIcon } from "./file-icons";
   import { dimmedPaths, gitStatus } from "../git/git-store";
   import { workspace } from "../workspace/workspace-store";
+  import { settings } from "../settings/settings-store";
   import { treeStore, type DirEntry, type TreeNode } from "./tree-store.svelte";
   import Self from "./TreeItem.svelte";
 
@@ -78,7 +79,11 @@
   async function loadChildren() {
     if (!node.is_dir || node.loaded) return;
     try {
-      const entries = await invoke<DirEntry[]>("read_dir", { path: node.path });
+      const entries = await invoke<DirEntry[]>("read_dir", {
+        path: node.path,
+        showHidden: $settings.fileTreeShowHidden,
+        respectGitignore: !$settings.fileTreeShowHidden,
+      });
       node.children = entries.map((e) => ({ ...e, expanded: false, loaded: false }));
       node.loaded = true;
     } catch {
@@ -210,6 +215,30 @@
         hint: "Del",
       },
       { separator: true },
+    );
+    if (!node.is_dir && $gitStatus.is_repo && $workspace) {
+      const ws = $workspace;
+      const root = ws.rootPath.replace(/\\/g, "/").replace(/\/$/, "");
+      const abs = node.path.replace(/\\/g, "/");
+      if (abs.startsWith(root + "/")) {
+        const rel = abs.slice(root.length + 1);
+        const isUntracked = $dimmedPaths.has(rel);
+        items.push(
+          {
+            label: "Diff against HEAD",
+            action: () =>
+              tabs.openDiff({
+                repo: ws.rootPath,
+                relPath: rel,
+                absPath: node.path,
+                isUntracked,
+              }),
+          },
+          { separator: true },
+        );
+      }
+    }
+    items.push(
       {
         label: "Reveal in File Explorer",
         action: () => revealItemInDir(node.path).catch(() => {}),

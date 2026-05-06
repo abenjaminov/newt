@@ -62,7 +62,7 @@ lerna-debug.log*
 .DS_Store
 .AppleDouble
 .LSOverride
-Icon?
+Icon[\r]
 ._*
 Thumbs.db
 ehthumbs.db

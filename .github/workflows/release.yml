@@ -66,8 +66,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --target ${{ matrix.target }}
-          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('main-{0}', github.run_number) }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Newt {0}', github.ref_name) || format('Newt main build #{0}', github.run_number) }}
+          tagName: "${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('main-{0}', github.run_number) }}"
+          releaseName: "${{ startsWith(github.ref, 'refs/tags/v') && format('Newt {0}', github.ref_name) || format('Newt main build {0}', github.run_number) }}"
           releaseBody: |
             Automated build.
             - Commit: ${{ github.sha }}

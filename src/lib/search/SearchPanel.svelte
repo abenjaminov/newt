@@ -15,13 +15,18 @@
     hits: Hit[];
     truncated: boolean;
     files_scanned: number;
+    cancelled: boolean;
   };
+  type RenderHit = Hit & { before: string; mid: string; after: string };
   type FileGroup = {
     path: string;
     rel: string;
-    hits: Hit[];
+    hits: RenderHit[];
     expanded: boolean;
   };
+
+  const MAX_GROUPS_RENDERED = 80;
+  const MAX_HITS_PER_FILE_RENDERED = 30;
 
   let query = $state("");
   let caseSensitive = $state(false);
@@ -40,7 +45,8 @@
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   let runId = 0;
-  const DEBOUNCE_MS = 300;
+  const DEBOUNCE_MS = 350;
+  const MIN_CHARS = 3;
 
   function scheduleSearch(immediate = false) {
     if (timer) clearTimeout(timer);
@@ -54,7 +60,10 @@
   async function runSearch() {
     const ws = $workspace;
     if (!ws) return;
-    if (query.trim().length < 2 && !isRegex) {
+    // Sync the reactive query from the ref now (debounced, so this only fires
+    // after the user pauses typing — no per-keystroke reactivity).
+    if (query !== pendingValue) query = pendingValue;
+    if (query.trim().length < MIN_CHARS && !isRegex) {
       groups = [];
       totalHits = 0;
       truncated = false;
@@ -76,6 +85,9 @@
         respectGitignore,
       });
       if (id !== runId) return;
+      // Server-side cancellation: a newer search superseded this one — drop
+      // the partial result so it can't overwrite fresher data.
+      if (res.cancelled) return;
       const byFile = new Map<string, FileGroup>();
       for (const h of res.hits) {
         let g = byFile.get(h.path);
@@ -83,9 +95,18 @@
           g = { path: h.path, rel: h.rel, hits: [], expanded: true };
           byFile.set(h.path, g);
         }
-        g.hits.push(h);
+        if (g.hits.length >= MAX_HITS_PER_FILE_RENDERED) continue;
+        const safeStart = Math.max(0, Math.min(h.preview.length, h.col_start));
+        const safeEnd = Math.max(safeStart, Math.min(h.preview.length, h.col_end));
+        g.hits.push({
+          ...h,
+          before: h.preview.slice(0, safeStart),
+          mid: h.preview.slice(safeStart, safeEnd),
+          after: h.preview.slice(safeEnd),
+        });
+        if (byFile.size > MAX_GROUPS_RENDERED) break;
       }
-      groups = Array.from(byFile.values());
+      groups = Array.from(byFile.values()).slice(0, MAX_GROUPS_RENDERED);
       totalHits = res.hits.length;
       truncated = res.truncated;
       filesScanned = res.files_scanned;
@@ -105,8 +126,13 @@
     groups = [...groups];
   }
 
+  // Capture the raw input value via a ref so each keystroke is just a property
+  // assignment — no reactive update, no DOM diffing. The reactive `query` is
+  // only synced when the debounced search actually fires.
+  let pendingValue = "";
+
   function onQueryInput(e: Event) {
-    query = (e.currentTarget as HTMLInputElement).value;
+    pendingValue = (e.currentTarget as HTMLInputElement).value;
     scheduleSearch(false);
   }
 
@@ -124,15 +150,6 @@
     inputEl?.select();
   }
 
-  function highlight(line: string, col: number, end: number): { before: string; mid: string; after: string } {
-    const safeStart = Math.max(0, Math.min(line.length, col));
-    const safeEnd = Math.max(safeStart, Math.min(line.length, end));
-    return {
-      before: line.slice(0, safeStart),
-      mid: line.slice(safeStart, safeEnd),
-      after: line.slice(safeEnd),
-    };
-  }
 </script>
 
 <div class="search-panel">
@@ -141,7 +158,6 @@
       bind:this={inputEl}
       type="text"
       placeholder="Search…"
-      value={query}
       oninput={onQueryInput}
       spellcheck="false"
       autocomplete="off"
@@ -201,12 +217,11 @@
             <span class="count">{g.hits.length}</span>
           </button>
           {#if g.expanded}
-            {#each g.hits as h (h.line + ":" + h.col_start + ":" + h.preview)}
-              {@const parts = highlight(h.preview, h.col_start, h.col_end)}
+            {#each g.hits as h (h.line + ":" + h.col_start)}
               <button class="hit" onclick={() => jumpTo(h)}>
                 <span class="ln">{h.line}</span>
                 <span class="prev"
-                  >{parts.before}<mark>{parts.mid}</mark>{parts.after}</span
+                  >{h.before}<mark>{h.mid}</mark>{h.after}</span
                 >
               </button>
             {/each}

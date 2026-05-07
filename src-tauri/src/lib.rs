@@ -2,8 +2,8 @@ mod commands;
 mod debug;
 
 use commands::{
-    debug as debug_cmd, file_index, formatter, fs_ops, git_ops, logo, processes, pty, search,
-    shells, watcher, worktree,
+    clipboard, debug as debug_cmd, file_index, formatter, fs_ops, git_ops, logo, processes, pty,
+    search, shells, watcher, worktree,
 };
 use debug::DebugRegistry;
 
@@ -71,6 +71,9 @@ pub fn run() {
             debug_cmd::debug_evaluate,
             debug_cmd::debug_terminate,
             debug_cmd::debug_list_sessions,
+            debug_cmd::debug_inspect,
+            clipboard::clipboard_read_text,
+            clipboard::clipboard_write_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

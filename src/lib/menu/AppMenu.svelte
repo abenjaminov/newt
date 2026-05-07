@@ -4,8 +4,10 @@
   import { workspace, activePanel } from "../workspace/workspace-store";
   import { paletteOpen } from "../palette/palette-store";
   import { settings, updateSettings } from "../settings/settings-store";
-  import { pickAndOpenFolder } from "../workspace/open-workspace";
+  import { pickAndOpenFolder, openFolder } from "../workspace/open-workspace";
+  import { getRecents, type RecentFolder } from "../recent/recent";
   import ContextMenu, { type MenuItem } from "../common/ContextMenu.svelte";
+  import { onMount } from "svelte";
 
   type Props = {
     onOpenSettings: () => void;
@@ -25,9 +27,22 @@
     onToggleTerminal,
   }: Props = $props();
 
-  type MenuId = "file" | "edit" | "view" | "help";
+  type MenuId = "file" | "edit" | "view" | "help" | "recents";
   let openMenu = $state<MenuId | null>(null);
   let menuPos = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+  let recents = $state<RecentFolder[]>([]);
+
+  async function refreshRecents() {
+    try {
+      recents = await getRecents();
+    } catch {
+      recents = [];
+    }
+  }
+
+  onMount(refreshRecents);
+  // Refresh whenever the workspace changes (newly opened folder bumps the list).
+  workspace.subscribe(() => void refreshRecents());
 
   function showMenu(id: MenuId, e: MouseEvent) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -51,6 +66,11 @@
         label: "Open Folder…",
         action: () => pickFolder(),
         hint: "Ctrl+O",
+      },
+      {
+        label: recents.length > 0 ? "Open Recent  ▸" : "Open Recent",
+        action: () => openRecentSubmenu(),
+        disabled: recents.length === 0,
       },
       {
         label: "Close Folder",
@@ -194,6 +214,31 @@
     ];
   }
 
+  function recentsItems(): MenuItem[] {
+    if (recents.length === 0) {
+      return [{ label: "No recent folders", action: () => {}, disabled: true }];
+    }
+    return recents.map((r) => ({
+      label: r.name,
+      hint: shortPath(r.path),
+      action: () => void openFolder(r.path),
+    }));
+  }
+
+  function shortPath(p: string): string {
+    if (p.length <= 36) return p;
+    return "…" + p.slice(p.length - 35);
+  }
+
+  function openRecentSubmenu() {
+    // Reopen as a fly-out positioned to the right of the previous menu so it
+    // visually reads as a submenu of the File menu.
+    queueMicrotask(() => {
+      menuPos = { x: menuPos.x + 200, y: menuPos.y };
+      openMenu = "recents";
+    });
+  }
+
   function itemsFor(id: MenuId): MenuItem[] {
     switch (id) {
       case "file":
@@ -204,6 +249,8 @@
         return viewItems();
       case "help":
         return helpItems();
+      case "recents":
+        return recentsItems();
     }
   }
 </script>

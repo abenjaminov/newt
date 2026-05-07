@@ -21,7 +21,7 @@
   import ProcessesPanel from "./lib/processes/ProcessesPanel.svelte";
   import WorktreeCreateModal from "./lib/worktree/WorktreeCreateModal.svelte";
   import Footer from "./lib/footer/Footer.svelte";
-  import SettingsModal from "./lib/settings/SettingsModal.svelte";
+  import SettingsView from "./lib/settings/SettingsView.svelte";
   import AppMenu from "./lib/menu/AppMenu.svelte";
   import WindowControls from "./lib/menu/WindowControls.svelte";
   import NamePrompt from "./lib/common/NamePrompt.svelte";
@@ -60,7 +60,9 @@
   let unlistenFs: UnlistenFn | undefined;
   let showPreview = $state(true);
   let showCreateWorktree = $state(false);
-  let showSettings = $state(false);
+  function openSettings() {
+    tabs.openSettings();
+  }
   let sidePanelCollapsed = $state(false);
   let terminalCollapsed = $state(false);
   let mdSplitFrac = $state(0.5);
@@ -377,7 +379,7 @@
         title: "Open Settings",
         group: "Settings",
         hint: "Ctrl+,",
-        run: () => (showSettings = true),
+        run: openSettings,
       },
       {
         id: "settings.zoomIn",
@@ -650,9 +652,12 @@
   }
 
   const isMd = $derived(
-    $activeTab && $activeTab.kind !== "diff" ? isMarkdown($activeTab.name) : false,
+    $activeTab && $activeTab.kind !== "diff" && $activeTab.kind !== "settings"
+      ? isMarkdown($activeTab.name)
+      : false,
   );
   const showingDiff = $derived($activeTab?.kind === "diff");
+  const showingSettings = $derived($activeTab?.kind === "settings");
   const showingImage = $derived(
     $activeTab !== null &&
       ($activeTab.kind === "image" ||
@@ -844,7 +849,7 @@
     <header class="top-bar">
       <div class="left">
         <AppMenu
-          onOpenSettings={() => (showSettings = true)}
+          onOpenSettings={openSettings}
           onCreateWorktree={() => (showCreateWorktree = true)}
           onCloseWorkspace={closeWorkspace}
           onSaveActive={saveActive}
@@ -865,7 +870,7 @@
         active={$activePanel}
         collapsed={sidePanelCollapsed}
         onSelect={toggleSidePanel}
-        onOpenSettings={() => (showSettings = true)}
+        onOpenSettings={openSettings}
       />
 
       <aside class="side-panel" class:hidden={sidePanelCollapsed}>
@@ -962,7 +967,7 @@
             </button>
           {/if}
         </div>
-        {#if $activeTab && !showingDiff && $activeTab.kind !== "diff"}
+        {#if $activeTab && !showingDiff && !showingSettings && $activeTab.kind !== "diff"}
           <Breadcrumbs
             path={$activeTab.path}
             rootPath={$workspace?.rootPath ?? null}
@@ -974,7 +979,9 @@
           style:--md-split-pct="{mdSplitFrac * 100}%"
           bind:this={editorHostEl}
         >
-          {#if showingDiff && $activeTab?.diffMeta}
+          {#if showingSettings}
+            <SettingsView />
+          {:else if showingDiff && $activeTab?.diffMeta}
             {#key $activeTab.path}
               <DiffView
                 repo={$activeTab.diffMeta.repo}
@@ -1063,9 +1070,6 @@
       />
     {/if}
 
-    {#if showSettings}
-      <SettingsModal onClose={() => (showSettings = false)} />
-    {/if}
 
     {#if $paletteOpen}
       <CommandPalette />

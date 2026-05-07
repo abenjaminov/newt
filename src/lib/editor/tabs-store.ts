@@ -1,7 +1,9 @@
 import { writable, derived } from "svelte/store";
 import type { FileKind } from "./languages";
 
-export type TabKind = FileKind | "diff";
+export type TabKind = FileKind | "diff" | "settings";
+
+export const SETTINGS_TAB_PATH = "settings://app";
 
 export type Tab = {
   path: string;             // unique tab key. For diffs, prefixed with "diff://"
@@ -27,6 +29,7 @@ const recentlyClosed: string[] = [];
 
 function pushRecentlyClosed(path: string) {
   if (path.startsWith("diff://")) return; // diff tabs aren't reopenable
+  if (path.startsWith("settings://")) return;
   const idx = recentlyClosed.indexOf(path);
   if (idx !== -1) recentlyClosed.splice(idx, 1);
   recentlyClosed.push(path);
@@ -89,6 +92,29 @@ function createTabs() {
           diffMeta: null,
         };
         return { tabs: [...s.tabs, tab], activePath: spec.path };
+      });
+    },
+    openSettings() {
+      const tabPath = SETTINGS_TAB_PATH;
+      update((s) => {
+        const existing = s.tabs.find((t) => t.path === tabPath);
+        if (existing) {
+          return { ...s, activePath: tabPath };
+        }
+        const tab: Tab = {
+          path: tabPath,
+          name: "Settings",
+          kind: "settings",
+          content: "",
+          saved: "",
+          dirty: false,
+          foreignWorktree: null,
+          imageDataUrl: null,
+          imageSize: null,
+          viewMode: "text",
+          diffMeta: null,
+        };
+        return { tabs: [...s.tabs, tab], activePath: tabPath };
       });
     },
     openDiff(spec: OpenDiffSpec) {

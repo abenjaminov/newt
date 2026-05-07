@@ -28,28 +28,39 @@ export const editorTheme = EditorView.theme(
       color: "var(--fg-dim)",
     },
     ".cm-activeLine": {
-      backgroundColor: "rgba(255,255,255,0.025)",
+      backgroundColor: "rgba(255,255,255,0.04)",
     },
     ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: "var(--accent)",
+      borderLeftColor: "#ffb070",
+      borderLeftWidth: "2px",
     },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
-      {
-        backgroundColor: "rgba(232,145,90,0.45)",
-      },
+    // Solid blue selection — highly visible on dark bg, contrasts with the
+    // warm orange accent so it never blends with syntax highlights.
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+      backgroundColor: "#2d5a9e !important",
+    },
+    ".cm-content ::selection": {
+      backgroundColor: "#2d5a9e",
+    },
+    // Other occurrences of the selected word.
     ".cm-selectionMatch": {
-      backgroundColor: "rgba(232,145,90,0.28)",
-      outline: "1px solid rgba(232,145,90,0.55)",
+      backgroundColor: "rgba(120,170,240,0.22)",
+      outline: "1px solid rgba(120,170,240,0.55)",
+      borderRadius: "2px",
     },
+    // In-editor find: inactive matches yellow-ish, the focused match is solid.
     ".cm-searchMatch": {
-      backgroundColor: "rgba(232,145,90,0.35)",
-      outline: "1px solid rgba(232,145,90,0.7)",
+      backgroundColor: "rgba(255,200,80,0.30)",
+      outline: "1px solid rgba(255,200,80,0.75)",
+      borderRadius: "2px",
     },
     ".cm-searchMatch.cm-searchMatch-selected": {
-      backgroundColor: "rgba(232,145,90,0.65)",
+      backgroundColor: "#a76a2a",
+      outline: "1px solid #ffb070",
     },
     ".cm-matchingBracket, .cm-nonmatchingBracket": {
-      backgroundColor: "rgba(232,145,90,0.2)",
+      backgroundColor: "rgba(232,145,90,0.28)",
+      outline: "1px solid rgba(232,145,90,0.6)",
       color: "inherit",
     },
     ".cm-tooltip": {

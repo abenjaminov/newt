@@ -1,3 +1,4 @@
+pub mod clipboard;
 pub mod debug;
 pub mod file_index;
 pub mod formatter;

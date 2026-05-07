@@ -93,6 +93,70 @@ export const terminate = (id: number) =>
 export const listSessions = () =>
   invoke<number[]>("debug_list_sessions");
 
+export type InspectArgs = {
+  threadId: number;
+  /** Number of frames to include (default 5). */
+  frameCount?: number;
+  /** Max depth for variable trees (default 2). */
+  maxVarDepth?: number;
+  /** Max children per container (default 50). */
+  maxChildrenPerScope?: number;
+  /** Watch expressions evaluated against the top frame. */
+  watches?: string[];
+};
+
+export type InspectVariable = {
+  name: string;
+  value: string;
+  type: string | null;
+  variables_reference: number;
+  children: InspectVariable[];
+  truncated_descendants?: boolean;
+  truncated_siblings?: boolean;
+};
+
+export type InspectScope = {
+  name: string;
+  expensive: boolean;
+  variables_reference: number;
+  variables: InspectVariable[];
+};
+
+export type InspectFrame = {
+  id: number;
+  name: string;
+  source: { name?: string; path?: string } | null;
+  line: number;
+  column: number;
+  scopes: InspectScope[];
+};
+
+export type InspectSnapshot = {
+  thread_id: number;
+  frames: InspectFrame[];
+  watches: Array<
+    | { expression: string; ok: true; result: unknown }
+    | { expression: string; ok: false; error: string }
+  >;
+};
+
+/**
+ * One-shot snapshot of the stopped session — frames + scopes + variables +
+ * watches in a single round trip. Designed for LLM consumption.
+ */
+export function inspect(id: number, args: InspectArgs): Promise<InspectSnapshot> {
+  return invoke<InspectSnapshot>("debug_inspect", {
+    id,
+    args: {
+      thread_id: args.threadId,
+      frame_count: args.frameCount ?? 5,
+      max_var_depth: args.maxVarDepth ?? 2,
+      max_children_per_scope: args.maxChildrenPerScope ?? 50,
+      watches: args.watches ?? [],
+    },
+  });
+}
+
 /**
  * Subscribe to events emitted by a single debug session. Each session emits
  * on the channel `dap:event:<id>`. Returns an unlisten function.
